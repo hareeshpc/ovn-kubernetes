@@ -328,6 +328,36 @@ func GetOVSOfPort(args ...string) (string, string, error) {
 	return stdout, stderr, err
 }
 
+// GetOvsEntry queries the OVS-DB using ovs-vsctl and returns
+// the requested entries.
+func GetOvsEntry(table, record, column, key string) (string, error) {
+	args := []string{"--if-exists", "get", table, record}
+	if key != "" {
+		args = append(args, fmt.Sprintf("%s:%s", column, key))
+	} else {
+		args = append(args, column)
+	}
+	stdout, stderr, err := RunOVSVsctl(args...)
+	if err != nil {
+		return "", fmt.Errorf("failed to run 'ovs-vsctl %s': %v\n  %q",
+			strings.Join(args, " "), err, string(stderr))
+	}
+	return strings.Trim(strings.TrimSpace(string(stdout)), "\""), err
+}
+
+// OvsFind returns the given column of records that match the condition
+func OvsFind(table, column, condition string) ([]string, error) {
+	args := []string{"--no-heading", "--format=csv", "--data=bare", "--columns=" + column, "find", table, condition}
+	stdout, _, err := RunOVSVsctl(args...) // ignore stderr
+	if err != nil {
+		return nil, err
+	}
+	if stdout == "" {
+		return nil, nil
+	}
+	return strings.Split(stdout, "\n"), nil
+}
+
 // RunOVSAppctlWithTimeout runs a command via ovs-appctl.
 func RunOVSAppctlWithTimeout(timeout int, args ...string) (string, string, error) {
 	cmdArgs := []string{fmt.Sprintf("--timeout=%d", timeout)}

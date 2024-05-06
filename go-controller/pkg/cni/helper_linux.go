@@ -382,6 +382,12 @@ func ConfigureOVS(ctx context.Context, namespace, podName, hostIfaceName string,
 		ipStrs[i] = ip.String()
 	}
 
+	br_type, err := ovsGet("bridge", "br-int", "datapath_type", "")
+	if err != nil {
+		// If getting the datapath_type failed, continue assuming 'system'
+		klog.Infof("datapath_type not set on br-int, assuming system\n")
+	}
+
 	klog.Infof("ConfigureOVS: namespace: %s, podName: %s, network: %s, NAD %s, SandboxID: %q, UID: %q, MAC: %s, IPs: %v",
 		namespace, podName, ifInfo.NetName, ifInfo.NADName, sandboxID, initialPodUID, ifInfo.MAC, ipStrs)
 
@@ -434,6 +440,23 @@ func ConfigureOVS(ctx context.Context, namespace, podName, hostIfaceName string,
 	// have IP addresses.
 	if len(ifInfo.IPs) > 0 {
 		ovsArgs = append(ovsArgs, fmt.Sprintf("external_ids:ip_addresses=%s", strings.Join(ipStrs, ",")))
+	}
+
+	if br_type == "netdev" {
+		_, err := util.GetSriovnetOps().GetRepresentorPortFlavour(hostIfaceName)
+		if err != nil {
+			// The error is not important: the given port is not a switchdev one and won't
+			// be used with DPDK. It can happen for legimitate reason. Keep a trace of the
+			// event and continue configuring OVS.
+			klog.Infof("Port %s cannot be used with DPDK, will use netlink interface in OVS",
+				hostIfaceName)
+		} else {
+			dpdkArgs, err := util.GenDPDKPortParameters(hostIfaceName)
+			if err != nil {
+				return err
+			}
+			ovsArgs = append(ovsArgs, dpdkArgs...)
+		}
 	}
 
 	if len(ifInfo.NetdevName) != 0 {

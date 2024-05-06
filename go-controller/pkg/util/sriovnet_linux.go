@@ -16,6 +16,7 @@ import (
 type SriovnetOps interface {
 	GetNetDevicesFromPci(pciAddress string) ([]string, error)
 	GetNetDevicesFromAux(auxDev string) ([]string, error)
+	GetPciFromNetDevice(name string) (string, error)
 	GetUplinkRepresentor(vfPciAddress string) (string, error)
 	GetUplinkRepresentorFromAux(auxDev string) (string, error)
 	GetVfIndexByPciAddress(vfPciAddress string) (int, error)
@@ -28,6 +29,8 @@ type SriovnetOps interface {
 	GetVfRepresentorDPU(pfID, vfIndex string) (string, error)
 	GetRepresentorPeerMacAddress(netdev string) (net.HardwareAddr, error)
 	GetRepresentorPortFlavour(netdev string) (sriovnet.PortFlavour, error)
+	GetPortIndexFromRepresentor(name string) (int, error)
+	GenDPDKPortParameters(netdev string) ([]string, error)
 }
 
 type defaultSriovnetOps struct {
@@ -51,6 +54,10 @@ func (defaultSriovnetOps) GetNetDevicesFromPci(pciAddress string) ([]string, err
 
 func (defaultSriovnetOps) GetNetDevicesFromAux(auxDev string) ([]string, error) {
 	return sriovnet.GetNetDevicesFromAux(auxDev)
+}
+
+func (defaultSriovnetOps) GetPciFromNetDevice(name string) (string, error) {
+	return sriovnet.GetPciFromNetDevice(name)
 }
 
 func (defaultSriovnetOps) GetUplinkRepresentor(vfPciAddress string) (string, error) {
@@ -99,6 +106,62 @@ func (defaultSriovnetOps) GetRepresentorPeerMacAddress(netdev string) (net.Hardw
 
 func (defaultSriovnetOps) GetRepresentorPortFlavour(netdev string) (sriovnet.PortFlavour, error) {
 	return sriovnet.GetRepresentorPortFlavour(netdev)
+}
+
+func (defaultSriovnetOps) GetPortIndexFromRepresentor(name string) (int, error) {
+	return sriovnet.GetPortIndexFromRepresentor(name)
+}
+
+func (defaultSriovnetOps) GenDPDKPortParameters(netdev string) ([]string, error) {
+	return GenDPDKPortParameters(netdev)
+}
+
+// GenDPDKPortParameters generates the parameters required by
+// DPDK to use the netdevice which name was provided.
+// Only physical port and PF, VF, SF representors are supported.
+func GenDPDKPortParameters(netdev string) ([]string, error) {
+	var pci string
+	var portID int
+
+	flavor, err := GetSriovnetOps().GetRepresentorPortFlavour(netdev)
+	if err != nil {
+		return nil, fmt.Errorf("failure to find port %v type: %v", netdev, err)
+	}
+
+	switch flavor {
+	case sriovnet.PORT_FLAVOUR_PHYSICAL:
+	case sriovnet.PORT_FLAVOUR_PCI_PF:
+	case sriovnet.PORT_FLAVOUR_PCI_VF:
+	case sriovnet.PORT_FLAVOUR_PCI_SF:
+	default:
+		return nil, fmt.Errorf("unknown port %s type %v", netdev, flavor)
+	}
+
+	pci, err = GetSriovnetOps().GetPciFromNetDevice(netdev)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get PCI address of port %v: %v", netdev, err)
+	}
+
+	if flavor == sriovnet.PORT_FLAVOUR_PCI_VF ||
+		flavor == sriovnet.PORT_FLAVOUR_PCI_SF {
+		portID, err = GetSriovnetOps().GetPortIndexFromRepresentor(netdev)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get port %s index: %v", netdev, err)
+		}
+	}
+
+	typeToDevarg := map[sriovnet.PortFlavour]string{
+		sriovnet.PORT_FLAVOUR_PHYSICAL: fmt.Sprintf("%v", pci),
+		// the HPF representor port ID is always -1 in DPDK.
+		sriovnet.PORT_FLAVOUR_PCI_PF: fmt.Sprintf("%v,representor=[-1]", pci),
+		sriovnet.PORT_FLAVOUR_PCI_VF: fmt.Sprintf("%v,representor=vf[%v]", pci, portID),
+		sriovnet.PORT_FLAVOUR_PCI_SF: fmt.Sprintf("%v,representor=sf[%v]", pci, portID),
+	}
+
+	return []string{
+		"type=dpdk",
+		fmt.Sprintf("options:dpdk-devargs=\"%v,dv_xmeta_en=4,dv_flow_en=2\"", typeToDevarg[flavor]),
+	}, nil
 }
 
 // GetFunctionRepresentorName returns representor name for passed device ID. Supported devices are Virtual Function
