@@ -120,47 +120,8 @@ func (defaultSriovnetOps) GenDPDKPortParameters(netdev string) ([]string, error)
 // DPDK to use the netdevice which name was provided.
 // Only physical port and PF, VF, SF representors are supported.
 func GenDPDKPortParameters(netdev string) ([]string, error) {
-	var pci string
-	var portID int
-
-	flavor, err := GetSriovnetOps().GetRepresentorPortFlavour(netdev)
-	if err != nil {
-		return nil, fmt.Errorf("failure to find port %v type: %v", netdev, err)
-	}
-
-	switch flavor {
-	case sriovnet.PORT_FLAVOUR_PHYSICAL:
-	case sriovnet.PORT_FLAVOUR_PCI_PF:
-	case sriovnet.PORT_FLAVOUR_PCI_VF:
-	case sriovnet.PORT_FLAVOUR_PCI_SF:
-	default:
-		return nil, fmt.Errorf("unknown port %s type %v", netdev, flavor)
-	}
-
-	pci, err = GetSriovnetOps().GetPciFromNetDevice(netdev)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get PCI address of port %v: %v", netdev, err)
-	}
-
-	if flavor == sriovnet.PORT_FLAVOUR_PCI_VF ||
-		flavor == sriovnet.PORT_FLAVOUR_PCI_SF {
-		portID, err = GetSriovnetOps().GetPortIndexFromRepresentor(netdev)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get port %s index: %v", netdev, err)
-		}
-	}
-
-	typeToDevarg := map[sriovnet.PortFlavour]string{
-		sriovnet.PORT_FLAVOUR_PHYSICAL: fmt.Sprintf("%v", pci),
-		// the HPF representor port ID is always -1 in DPDK.
-		sriovnet.PORT_FLAVOUR_PCI_PF: fmt.Sprintf("%v,representor=[-1]", pci),
-		sriovnet.PORT_FLAVOUR_PCI_VF: fmt.Sprintf("%v,representor=vf[%v]", pci, portID),
-		sriovnet.PORT_FLAVOUR_PCI_SF: fmt.Sprintf("%v,representor=sf[%v]", pci, portID),
-	}
-
 	return []string{
 		"type=dpdk",
-		fmt.Sprintf("options:dpdk-devargs=\"%v,dv_xmeta_en=4,dv_flow_en=2\"", typeToDevarg[flavor]),
 	}, nil
 }
 

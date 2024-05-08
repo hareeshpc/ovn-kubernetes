@@ -652,6 +652,18 @@ func (pr *PodRequest) UnconfigureInterface(ifInfo *PodInterfaceInfo) error {
 
 	// host side deletion of OVS port and kernel interface
 	ifName := pr.SandboxID[:(15-len(ifnameSuffix))] + ifnameSuffix
+	if pr.CNIConf.DeviceID != "" {
+		// SR-IOV Case
+		condString := []string{"external-ids:vf-netdev-name=" + ifInfo.NetdevName}
+		ovsIfNames, err := ovsFind("Interface", "name", condString...)
+		if err != nil || len(ovsIfNames) != 1 {
+			klog.Warningf("Couldn't find the OVS interface for pod %s/%s Netdevname: %s",
+				pr.PodNamespace, pr.PodName, ifInfo.NetdevName, err)
+		} else {
+			ifName = ovsIfNames[0]
+		}
+	}
+	klog.Infof("Deleting port: %s for Pod: %s from br-int", ifName, pr.PodName)
 	pr.deletePorts(ifName, pr.PodNamespace, pr.PodName)
 
 	if err := clearPodBandwidth(pr.SandboxID); err != nil {

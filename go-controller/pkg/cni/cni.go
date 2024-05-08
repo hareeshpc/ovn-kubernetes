@@ -202,7 +202,8 @@ func (pr *PodRequest) cmdDel(clientset *ClientSet) (*Response, error) {
 			if pr.netName != types.DefaultNetworkName {
 				condString = append(condString, fmt.Sprintf(" external_ids:%s=%s", types.NADExternalID, pr.nadName))
 			} else {
-				condString = append(condString, fmt.Sprintf(" external_ids:%s{=}[]", types.NADExternalID))
+				// ToDo Hareesh Skipping this as it is causing an ovs find error
+				//condString = append(condString, fmt.Sprintf(" external_ids:%s{=}[]", types.NADExternalID))
 			}
 			ovsIfNames, err := ovsFind("Interface", "name", condString...)
 			if err != nil || len(ovsIfNames) != 1 {
